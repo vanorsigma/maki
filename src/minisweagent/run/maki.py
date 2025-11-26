@@ -144,8 +144,6 @@ def audio_receiver_handler():
     """
     manager.connect()
     model = whisper.load_model("small")
-    model_handler = initialize_model_handler(
-        lambda x: manager.get_result_queue().put(x))
 
     while True:
         console.log(f"Audio queue is empty? {manager.get_audio_queue().empty()}")
@@ -161,12 +159,7 @@ def audio_receiver_handler():
         result = model.transcribe(audio_np, fp16=torch.cuda.is_available())
         text = cast(str, result["text"]).strip()
         console.print('Heard', text)
-
-        output = MakiOutputThinkingRequest(thinking=True)
-        manager.get_result_queue().put(output.model_dump_json())
-        model_handler(text)
-        output = MakiOutputThinkingRequest(thinking=False)
-        manager.get_result_queue().put(output.model_dump_json())
+        manager.get_result_queue().put(text)
 
 def audio_sender_handler(sender: websockets.sync.connection.Connection):
     """
@@ -181,6 +174,9 @@ def audio_sender_handler(sender: websockets.sync.connection.Connection):
     recognizer = sr.Recognizer()
     remote_queue = manager.get_audio_queue()
     data_queue = Queue()
+
+    model_handler = initialize_model_handler(
+        lambda x: manager.get_result_queue().put(x))
 
     source = sr.Microphone(sample_rate=16000)
     if not source:
@@ -200,10 +196,15 @@ def audio_sender_handler(sender: websockets.sync.connection.Connection):
 
     while True:
         now = datetime.utcnow()
-        # forward messages in the result queue
+
+        # result queue is whatever heard by the whisper model, process it
         result_queue = manager.get_result_queue()
         if not result_queue.empty():
-            sender.send(result_queue.get())
+            output = MakiOutputThinkingRequest(thinking=True)
+            sender.send(output.model_dump_json())
+            model_handler(result_queue.get())
+            output = MakiOutputThinkingRequest(thinking=False)
+            sender.send(output.model_dump_json())
 
         # audio related
         if not data_queue.empty():

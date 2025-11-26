@@ -12,7 +12,7 @@ class MakiAgent(DefaultAgent):
         if self._on_observation_callback:
             self._on_observation_callback(parsed_action['action'])
 
-        output = self.executey_action(parsed_action)
+        output = self.execute_action(parsed_action)
         observation = self.render_template(self.config.action_observation_template, output=output)
         self.add_message("user", observation)
         if self._on_output_callback:
