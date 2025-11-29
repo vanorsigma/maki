@@ -75,7 +75,8 @@ app = typer.Typer(rich_markup_mode="rich")
 prompt_session = PromptSession(
     history=FileHistory(global_config_dir / "mini_task_history.txt")
 )
-model_name = "codeqwen:v1.5"
+# model_name = "qwen2.5-coder:14b"
+model_name = "qwen3:8b"
 
 # Thingy
 WS_SENDER_URL = "ws://127.0.0.1:3001/senders"
@@ -175,9 +176,6 @@ def audio_sender_handler(sender: websockets.sync.connection.Connection):
     remote_queue = manager.get_audio_queue()
     data_queue = Queue()
 
-    model_handler = initialize_model_handler(
-        lambda x: manager.get_result_queue().put(x))
-
     source = sr.Microphone(sample_rate=16000)
     if not source:
         console.print("no mic found")
@@ -200,11 +198,17 @@ def audio_sender_handler(sender: websockets.sync.connection.Connection):
         # result queue is whatever heard by the whisper model, process it
         result_queue = manager.get_result_queue()
         if not result_queue.empty():
-            output = MakiOutputThinkingRequest(thinking=True)
-            sender.send(output.model_dump_json())
-            model_handler(result_queue.get())
-            output = MakiOutputThinkingRequest(thinking=False)
-            sender.send(output.model_dump_json())
+            text = result_queue.get()
+            console.log(f"Heard: {text}")
+            if 'maki' in text.lower():
+                console.log(f"Maki keyphrase heard")
+                output = MakiOutputThinkingRequest(thinking=True)
+                sender.send(output.model_dump_json())
+                console.log("Sending to the model")
+                model_handler = initialize_model_handler(lambda x: sender.send(x))
+                model_handler(text)
+                output = MakiOutputThinkingRequest(thinking=False)
+                sender.send(output.model_dump_json())
 
         # audio related
         if not data_queue.empty():
